@@ -21,8 +21,9 @@ def main_application():
 
                     # Tombol Submit
                     if st.form_submit_button("Sign In", type="primary", use_container_width=True):
-                        st.session_state.logged_in = True
-                        st.rerun()  # Rerun to reset the session state and display the logged-in view
+                        if username == "user1" and password == "user1":
+                            st.session_state.logged_in = True
+                            st.rerun()  # Rerun to reset the session state and display the logged-in view
                     
                     col1, col2 = st.columns(2)
                     col1.write("Don't have an account?")
