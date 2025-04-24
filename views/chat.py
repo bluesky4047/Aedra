@@ -30,7 +30,7 @@ def configure_gemini():
 @st.cache_data
 def load_reference_data():
     try:
-        df = pd.read_csv("DATA DBD.csv")
+        df = pd.read_csv("views/DATA DBD.csv")
         return df
     except Exception as e:
         st.error(f"Error loading reference data: {e}")
