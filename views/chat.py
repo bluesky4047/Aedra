@@ -180,13 +180,13 @@ options = [
     ["Tidak", "Sedikit", "Parah"]
 ]
 
-st.title("FeverScan - Pemindai Demam Berdarah")
+st.title("Aedra - Pemindai Demam Berdarah")
 
 # Initialize session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
     # Assistant speaks first
-    initial_message = "Halo! Selamat datang di FeverScan. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
+    initial_message = "Halo! Selamat datang di Aedra. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
     st.session_state.messages.append({"role": "assistant", "content": initial_message})
     # Add first question immediately
     st.session_state.messages.append({"role": "assistant", "content": questions[0]})
@@ -322,7 +322,7 @@ else:
         if st.button("Mulai Tes Baru", key="new_test"):
             # Reset session state but keep user ID
             st.session_state.messages = []
-            initial_message = "Halo! Selamat datang di FeverScan. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
+            initial_message = "Halo! Selamat datang di Aedra. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
             st.session_state.messages.append({"role": "assistant", "content": initial_message})
             st.session_state.messages.append({"role": "assistant", "content": questions[0]})
             st.session_state.current_question = 0
@@ -333,9 +333,9 @@ else:
 
 # Add a sidebar with some information
 with st.sidebar:
-    st.header("Tentang FeverScan")
+    st.header("Tentang Aedra")
     st.write("""
-    FeverScan adalah alat pemindai gejala demam berdarah yang menggunakan AI untuk membantu mengidentifikasi kemungkinan infeksi dengue berdasarkan gejala-gejala yang Anda alami.
+    Aedra adalah alat pemindai gejala demam berdarah yang menggunakan AI untuk membantu mengidentifikasi kemungkinan infeksi dengue berdasarkan gejala-gejala yang Anda alami.
     
     **Catatan Penting**: Alat ini tidak menggantikan diagnosis medis profesional. Selalu konsultasikan dengan tenaga medis untuk diagnosis dan perawatan yang tepat.
     """)
