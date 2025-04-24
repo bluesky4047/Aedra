@@ -13,7 +13,6 @@ def main_application():
             with col_main:
                 with st.form("Sign In"):
                     # Judul form
-                    st.title("Aedra Ai")
                     st.title("Sign In", anchor=False)
 
                     # Input fields
