@@ -3,3 +3,4 @@ pymongo[srv]==4.6.1
 pandas
 google-generativeai
 python-dotenv
+bcrypt
