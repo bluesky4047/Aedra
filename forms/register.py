@@ -1,24 +1,36 @@
 import streamlit as st
 import time
 import bcrypt
-from pymongo import MongoClient
+import pymongo
+import os
+from dotenv import load_dotenv
 
-# Initialize MongoDB client
-client = MongoClient("localhost", 27017)
-db_name = "feverscan"
-db = client[db_name]
-users_col = db["users"]
+# Load environment variables
+load_dotenv()
 
-def register_user(username, password):
-    if users_col.find_one({"username": username}):
+# MODE PENGEMBANGAN - Set ke True untuk testing database tanpa Gemini
+DEVELOPMENT_MODE = st.sidebar.checkbox("Mode Testing Database", value=False)
+
+# Configure MongoDB connection
+def connect_to_mongodb():
+    mongo_uri = os.getenv("MONGODB_URI")
+    client = pymongo.MongoClient(mongo_uri)
+    db = client["Aedra_Ai"]  # Use the existing Aedra_Ai database
+    users_collection = db["users"]  # Access the users collection
+    return users_collection
+
+def register_user(username, password, users_collection):
+    if users_collection.find_one({"username": username}):
         return False, "Username sudah digunakan."
 
     hashed_pw = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-    users_col.insert_one({"username": username, "password": hashed_pw})
+    users_collection.insert_one({"username": username, "password": hashed_pw})
     return True, "Registrasi berhasil! Silakan login."
 
 @st.dialog("Sign Up")
 def register():
+    users_collection = connect_to_mongodb()
+    
     with st.form("register"):
         new_username = st.text_input("Username Baru")
         new_password = st.text_input("Password Baru", type="password")
@@ -31,11 +43,10 @@ def register():
                 st.error("Password tidak cocok!")
             else:
                 # Simulasi proses registrasi
-                success, message = register_user(new_username, new_password)
+                success, message = register_user(new_username, new_password, users_collection)
                 if success:
                     st.success(message)
                 else:
                     st.error(message)
             time.sleep(1)
             st.rerun()
-            
