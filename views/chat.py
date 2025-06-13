@@ -13,19 +13,20 @@ import random
 # Load environment variables
 load_dotenv()
 
-# MODE PENGEMBANGAN - Set ke True untuk testing database tanpa Gemini
-DEVELOPMENT_MODE = st.sidebar.checkbox("Mode Testing Database", value=False)
-
 # Configure MongoDB connection
 def connect_to_mongodb():
     mongo_uri = os.getenv("MONGODB_URI")
-    client = pymongo.MongoClient(mongo_uri)
-    db = client["Aedra_Ai"]  # Use the existing Aedra_Ai database
-    history_collection = db["history"]  # Access the history collection
-    users_collection = db["users"]      # Access the users collection
-    return history_collection, users_collection
+    try:
+        client = pymongo.MongoClient(mongo_uri)
+        db = client["Aedra_Ai"]  # Use the existing Aedra_Ai database
+        history_collection = db["history"]  # Access the history collection
+        users_collection = db["users"]      # Access the users collection
+        return history_collection, users_collection
+    except Exception as e:
+        st.error(f"❌ Gagal koneksi ke MongoDB: {e}")
+        st.stop() # Stop execution if database connection fails
 
-# Test koneksi MongoDB
+# Test koneksi MongoDB (hanya untuk debugging awal, tidak dipanggil di sidebar utama)
 def test_mongodb_connection():
     try:
         history_collection, users_collection = connect_to_mongodb()
@@ -49,7 +50,7 @@ def test_mongodb_connection():
 
 # Configure Gemini API
 def configure_gemini():
-    if DEVELOPMENT_MODE:
+    if st.session_state.DEVELOPMENT_MODE: # Menggunakan st.session_state untuk DEVELOPMENT_MODE
         return None  # Tidak konfigurasi Gemini di mode testing
     
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -219,35 +220,47 @@ Terima kasih atas pertanyaan: "{question}"
 
 # Process user responses - dengan pilihan REAL atau MOCK
 def analyze_symptoms(responses, reference_data, user_id):
-    if DEVELOPMENT_MODE:
+    if st.session_state.DEVELOPMENT_MODE: # Menggunakan st.session_state
         # Mode testing - gunakan mock response
         st.info("🧪 Mode Testing: Menggunakan response palsu (tidak memanggil Gemini)")
         time.sleep(1)  # Simulasi loading
         return get_mock_diagnosis(responses)
     else:
-        # Mode production - gunakan Gemini API (kode asli Anda)
+        # Mode production - gunakan Gemini API
         try:
             gemini_model = configure_gemini()
             
             symptom_summary = []
             for question, answer in responses.items():
+                # Improved symptom extraction based on keywords
                 if "demam" in question.lower():
                     symptom_summary.append(f"Demam: {answer}")
-                elif "nyeri" in question.lower():
+                elif "nyeri" in question.lower() and ("mata" in question.lower() or "otot" in question.lower() or "sendi" in question.lower()):
                     symptom_summary.append(f"Nyeri: {answer}")
-                elif "lelah" in question.lower():
-                    symptom_summary.append(f"Kelelahan: {answer}")
-                elif "mual" in question.lower():
+                elif "lelah" in question.lower() or "lemas" in question.lower():
+                    symptom_summary.append(f"Kelelahan/Kelemasan: {answer}")
+                elif "mual" in question.lower() or "muntah" in question.lower():
                     symptom_summary.append(f"Mual/Muntah: {answer}")
-                elif "ruam" in question.lower():
+                elif "ruam" in question.lower() or "bintik" in question.lower():
                     symptom_summary.append(f"Ruam kulit: {answer}")
                 elif "perdarahan" in question.lower():
                     symptom_summary.append(f"Perdarahan: {answer}")
+                elif "sakit kepala" in question.lower():
+                    symptom_summary.append(f"Sakit kepala: {answer}")
+                elif "perut" in question.lower():
+                    symptom_summary.append(f"Nyeri perut: {answer}")
+                elif "pusing" in question.lower() or "pingsan" in question.lower():
+                    symptom_summary.append(f"Pusing/Pingsan: {answer}")
+                elif "makan" in question.lower() or "minum" in question.lower():
+                    symptom_summary.append(f"Kesulitan makan/minum: {answer}")
+                else: # Fallback for any other questions
+                    symptom_summary.append(f"{question.split(' ')[1]}: {answer}") # Take the second word of question as generic symptom
+
             
             prompt = f"""
             Analisis gejala demam berdarah dalam Bahasa Indonesia:
             
-            Gejala pasien: {'; '.join(symptom_summary)}
+            Gejala pasien: {'; '.join(symptom_summary)}.
             
             Berikan:
             1. Kemungkinan demam berdarah (Tinggi/Sedang/Rendah)
@@ -255,25 +268,33 @@ def analyze_symptoms(responses, reference_data, user_id):
             3. Tanda peringatan penting
             4. Kapan mencari bantuan medis
             
-            Jawaban singkat dan jelas.
+            Jawaban singkat, jelas, dan menggunakan format Markdown untuk poin-poin.
             """
             
             response = gemini_model.generate_content(prompt)
             return response.text
+        except ResourceExhausted:
+            st.error("❌ Kuota Gemini API habis atau batas rate tercapai. Coba lagi nanti.")
+            st.info("Menggunakan fallback response (mock diagnosis)...")
+            return get_mock_diagnosis(responses)
+        except DeadlineExceeded:
+            st.error("❌ Permintaan ke Gemini API timeout. Koneksi mungkin lambat atau server sibuk.")
+            st.info("Menggunakan fallback response (mock diagnosis)...")
+            return get_mock_diagnosis(responses)
         except Exception as e:
             st.error(f"Error calling Gemini API: {e}")
-            st.info("Menggunakan fallback response...")
+            st.info("Menggunakan fallback response (mock diagnosis)...")
             return get_mock_diagnosis(responses)
 
 # Process follow-up questions - dengan pilihan REAL atau MOCK
 def answer_followup_question(question, reference_data):
-    if DEVELOPMENT_MODE:
+    if st.session_state.DEVELOPMENT_MODE: # Menggunakan st.session_state
         # Mode testing - gunakan mock response
         st.info("🧪 Mode Testing: Menggunakan response palsu untuk pertanyaan lanjutan")
         time.sleep(1)  # Simulasi loading
         return get_mock_followup_answer(question)
     else:
-        # Mode production - gunakan Gemini API (kode asli Anda)
+        # Mode production - gunakan Gemini API
         try:
             gemini_model = configure_gemini()
             
@@ -290,15 +311,34 @@ def answer_followup_question(question, reference_data):
             
             response = gemini_model.generate_content(prompt)
             return response.text
+        except ResourceExhausted:
+            st.error("❌ Kuota Gemini API habis atau batas rate tercapai. Coba lagi nanti.")
+            st.info("Menggunakan fallback response (mock jawaban)...")
+            return get_mock_followup_answer(question)
+        except DeadlineExceeded:
+            st.error("❌ Permintaan ke Gemini API timeout. Koneksi mungkin lambat atau server sibuk.")
+            st.info("Menggunakan fallback response (mock jawaban)...")
+            return get_mock_followup_answer(question)
         except Exception as e:
             st.error(f"Error calling Gemini API: {e}")
-            st.info("Menggunakan fallback response...")
+            st.info("Menggunakan fallback response (mock jawaban)...")
             return get_mock_followup_answer(question)
 
 # Save diagnosis to MongoDB
 def save_to_mongodb(user_id, user_responses, diagnosis):
     try:
         history_collection, users_collection = connect_to_mongodb()
+        
+        # Reconstruct conversation messages for this diagnosis
+        conversation = [
+            {"role": "assistant", "content": f"Halo! Selamat datang di Aedra{' (Mode Testing)' if st.session_state.DEVELOPMENT_MODE else ''}. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."}
+        ]
+        for question in questions:
+            if question in user_responses:
+                conversation.append({"role": "assistant", "content": question})
+                conversation.append({"role": "user", "content": user_responses[question]})
+        conversation.append({"role": "assistant", "content": diagnosis})
+        conversation.append({"role": "assistant", "content": "Anda dapat bertanya lebih lanjut tentang demam berdarah atau memulai tes baru."})
         
         # Save to history collection
         history_record = {
@@ -307,7 +347,8 @@ def save_to_mongodb(user_id, user_responses, diagnosis):
             "type": "dengue_diagnosis",
             "responses": user_responses,
             "diagnosis": diagnosis,
-            "mode": "testing" if DEVELOPMENT_MODE else "production"  # Tambah info mode
+            "conversation": conversation,
+            "mode": "testing" if st.session_state.DEVELOPMENT_MODE else "production"
         }
         result = history_collection.insert_one(history_record)
         
@@ -321,21 +362,27 @@ def save_to_mongodb(user_id, user_responses, diagnosis):
                 },
                 "$inc": {"diagnosis_count": 1}
             },
-            upsert=True  # Create user if they don't exist
+            upsert=True
         )
         
-        if DEVELOPMENT_MODE:
-            st.success(f"✅ Data berhasil disimpan ke MongoDB! ID: {result.inserted_id}")
+        if st.session_state.DEVELOPMENT_MODE:
+            st.success(f"✅ Data diagnosis berhasil disimpan ke MongoDB! ID: {result.inserted_id}")
         
         return True
     except Exception as e:
-        st.error(f"❌ Error saving to database: {e}")
+        st.error(f"❌ Error saving diagnosis to database: {e}")
         return False
 
 # Save follow-up question to MongoDB
 def save_followup_to_mongodb(user_id, question, answer):
     try:
         history_collection, users_collection = connect_to_mongodb()
+        
+        # Reconstruct conversation for this follow-up
+        conversation = [
+            {"role": "user", "content": question},
+            {"role": "assistant", "content": answer}
+        ]
         
         # Save to history collection
         history_record = {
@@ -344,7 +391,8 @@ def save_followup_to_mongodb(user_id, question, answer):
             "type": "followup_question",
             "question": question,
             "answer": answer,
-            "mode": "testing" if DEVELOPMENT_MODE else "production"  # Tambah info mode
+            "conversation": conversation,
+            "mode": "testing" if st.session_state.DEVELOPMENT_MODE else "production"
         }
         result = history_collection.insert_one(history_record)
         
@@ -360,12 +408,12 @@ def save_followup_to_mongodb(user_id, question, answer):
             upsert=True
         )
         
-        if DEVELOPMENT_MODE:
-            st.success(f"✅ Pertanyaan berhasil disimpan! ID: {result.inserted_id}")
+        if st.session_state.DEVELOPMENT_MODE:
+            st.success(f"✅ Pertanyaan lanjutan berhasil disimpan! ID: {result.inserted_id}")
         
         return True
     except Exception as e:
-        st.error(f"❌ Error saving to database: {e}")
+        st.error(f"❌ Error saving follow-up question to database: {e}")
         return False
 
 # Get or create user_id
@@ -374,31 +422,22 @@ def get_user_id():
         st.session_state.user_id = str(uuid.uuid4())
     return st.session_state.user_id
 
-# Tampilkan data dari database untuk testing
-def show_database_data():
-    if DEVELOPMENT_MODE:
-        st.sidebar.header("🗃️ Data Database")
-        
-        try:
-            history_collection, users_collection = connect_to_mongodb()
-            
-            # Tampilkan data history terbaru
-            recent_history = list(history_collection.find().sort("timestamp", -1).limit(5))
-            if recent_history:
-                st.sidebar.subheader("History Terbaru:")
-                for item in recent_history[:3]:  # Tampilkan 3 teratas
-                    st.sidebar.text(f"• {item.get('type', 'unknown')} - {item.get('timestamp', 'no time')}")
-            
-            # Tampilkan statistik users
-            total_users = users_collection.count_documents({})
-            st.sidebar.metric("Total Users", total_users)
-            
-            # Button untuk melihat semua data
-            if st.sidebar.button("Lihat Semua Data"):
-                st.sidebar.json(recent_history[0] if recent_history else {"message": "No data"})
-                
-        except Exception as e:
-            st.sidebar.error(f"Error mengambil data: {e}")
+# Get conversation history from MongoDB for sidebar display
+def get_conversation_history(user_id):
+    history_collection, _ = connect_to_mongodb()
+    # Fetch history for the current user, sorted by timestamp descending
+    # Include conversation field for reloading chats
+    return list(history_collection.find(
+        {"user_id": user_id},
+        {
+            "type": 1,
+            "timestamp": 1,
+            "question": 1,
+            "diagnosis": 1,
+            "conversation": 1,
+            "_id": 1  # Include _id for clickable buttons
+        }
+    ).sort("timestamp", pymongo.DESCENDING).limit(10))
 
 # Define all questions
 questions = [
@@ -434,19 +473,79 @@ options = [
 
 st.title("Aedra - Pemindai Demam Berdarah")
 
-# Tampilkan mode yang aktif
-if DEVELOPMENT_MODE:
-    st.warning("🧪 **MODE TESTING DATABASE AKTIF** - Tidak menggunakan Gemini API")
-    # Test koneksi database di awal
-    db_connected, hist_col, users_col = test_mongodb_connection()
-else:
-    st.info("🚀 **MODE PRODUCTION** - Menggunakan Gemini API")
+# Initialize session state for DEVELOPMENT_MODE if not already set
+if "DEVELOPMENT_MODE" not in st.session_state:
+    st.session_state.DEVELOPMENT_MODE = False
 
-# Initialize session state
+# Ensure user has an ID
+user_id = get_user_id()
+
+# Load reference data
+reference_data = load_reference_data()
+
+# --- Sidebar Content ---
+with st.sidebar:
+    st.header("🤖 Aedra AI")
+    st.text(f"User ID: {user_id[:8]}...")
+    st.text(f"Timestamp: {time.strftime('%H:%M:%S')}")
+
+    # DEVELOPMENT_MODE checkbox
+    st.session_state.DEVELOPMENT_MODE = st.checkbox("Mode Testing Database", value=st.session_state.DEVELOPMENT_MODE)
+    if st.session_state.DEVELOPMENT_MODE:
+        st.warning("🧪 **MODE TESTING DATABASE AKTIF** - Tidak menggunakan Gemini API")
+    else:
+        st.info("🚀 **MODE PRODUCTION** - Menggunakan Gemini API")
+
+    st.header("📚 Riwayat Percakapan")
+    history = get_conversation_history(user_id)
+
+    if history:
+        for entry in history:
+            entry_type = entry.get("type", "unknown")
+            timestamp = entry.get("timestamp", "No Timestamp").split(' ')[1]  # Just show time
+            entry_id = str(entry["_id"])  # MongoDB ObjectId for button key
+
+            if entry_type == "dengue_diagnosis":
+                diagnosis_text = entry.get("diagnosis", "")
+                match = re.search(r"Kemungkinan Demam Berdarah:\s*(\w+)", diagnosis_text)
+                risk_level = match.group(1) if match else "N/A"
+                label = f"Diagnosis ({timestamp}) - Risiko: {risk_level}"
+                if st.button(label, key=f"history_{entry_id}"):
+                    # Load the conversation into session state
+                    st.session_state.messages = entry.get("conversation", [])
+                    st.session_state.diagnosis_complete = True
+                    st.session_state.allow_followup = True
+                    st.session_state.current_question = len(questions)
+                    st.session_state.user_responses = entry.get("responses", {})
+                    st.rerun()
+            elif entry_type == "followup_question":
+                question_text = entry.get("question", "Tidak ada pertanyaan")
+                display_question = (question_text[:40] + '...') if len(question_text) > 40 else question_text
+                label = f"Tanya ({timestamp}) - {display_question}"
+                if st.button(label, key=f"history_{entry_id}"):
+                    # Load the conversation into session state
+                    st.session_state.messages = entry.get("conversation", [])
+                    st.session_state.diagnosis_complete = True
+                    st.session_state.allow_followup = True
+                    st.session_state.current_question = len(questions)
+                    st.session_state.user_responses = {}  # Clear responses for follow-up
+                    st.rerun()
+    else:
+        st.info("Belum ada riwayat percakapan.")
+
+# --- Main Chat Interface ---
+
+# Display the mode active in the main area
+if st.session_state.DEVELOPMENT_MODE:
+    st.warning("🧪 **MODE TESTING DATABASE AKTIF** - Tidak menggunakan Gemini API. Menggunakan response palsu dan menyimpan ke DB.")
+else:
+    st.info("🚀 **MODE PRODUCTION** - Menggunakan Gemini API. Memerlukan kuota API.")
+
+# Initialize session state for chat flow
 if "messages" not in st.session_state:
     st.session_state.messages = []
     # Assistant speaks first
-    mode_text = " (Mode Testing)" if DEVELOPMENT_MODE else ""
+    mode_text = " (Mode Testing)" if st.session_state.DEVELOPMENT_MODE else ""
     initial_message = f"Halo! Selamat datang di Aedra{mode_text}. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
     st.session_state.messages.append({"role": "assistant", "content": initial_message})
     # Add first question immediately
@@ -464,15 +563,6 @@ if "diagnosis_complete" not in st.session_state:
 if "allow_followup" not in st.session_state:
     st.session_state.allow_followup = False
 
-# Ensure user has an ID
-user_id = get_user_id()
-
-# Load reference data
-reference_data = load_reference_data()
-
-# Tampilkan data database jika dalam mode testing
-show_database_data()
-
 # Display chat messages from history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -482,10 +572,16 @@ for message in st.session_state.messages:
 if not st.session_state.diagnosis_complete:
     # We're still in the diagnosis phase
     if st.session_state.current_question < len(questions):
+        # Display current question in the main chat (if not already displayed)
+        if not st.session_state.messages or st.session_state.messages[-1]["content"] != questions[st.session_state.current_question]:
+             st.session_state.messages.append({"role": "assistant", "content": questions[st.session_state.current_question]})
+             st.rerun()
+
         # Display option buttons for current question
         current_options = options[st.session_state.current_question]
         cols = st.columns(len(current_options))
         
+        button_clicked = False
         for i, option in enumerate(current_options):
             if cols[i].button(option, key=f"q{st.session_state.current_question}_option{i}"):
                 # Store the user's response
@@ -496,15 +592,9 @@ if not st.session_state.diagnosis_complete:
                 
                 # Move to next question
                 st.session_state.current_question += 1
-                
-                # Add the next question to messages if not at the end
-                if st.session_state.current_question < len(questions):
-                    next_question = questions[st.session_state.current_question]
-                    st.session_state.messages.append({"role": "assistant", "content": next_question})
-                
-                # Force a rerun to update the UI
-                st.rerun()
-        
+                button_clicked = True
+                break
+
         # Allow for free text input as well
         user_input = st.text_input(
             "Atau ketikkan jawaban Anda sendiri:",
@@ -521,23 +611,21 @@ if not st.session_state.diagnosis_complete:
                 
                 # Move to next question
                 st.session_state.current_question += 1
-                
-                # Add the next question to messages if not at the end
-                if st.session_state.current_question < len(questions):
-                    next_question = questions[st.session_state.current_question]
-                    st.session_state.messages.append({"role": "assistant", "content": next_question})
-                
-                # Force a rerun to update the UI
-                st.rerun()
+                button_clicked = True
+            else:
+                st.warning("Mohon masukkan jawaban atau pilih opsi.")
+        
+        if button_clicked:
+            st.rerun()
     else:
         # All questions answered, perform diagnosis
         if not st.session_state.diagnosis_complete:
-            loading_text = "Menganalisis gejala Anda..." if not DEVELOPMENT_MODE else "Testing database - Membuat response palsu..."
+            loading_text = "Menganalisis gejala Anda..." if not st.session_state.DEVELOPMENT_MODE else "Testing database - Membuat response palsu..."
             with st.spinner(loading_text):
-                # Get diagnosis (REAL atau MOCK tergantung mode)
+                # Get diagnosis
                 diagnosis = analyze_symptoms(st.session_state.user_responses, reference_data, user_id)
                 
-                # Save to MongoDB (selalu disimpan untuk testing)
+                # Save to MongoDB
                 save_to_mongodb(user_id, st.session_state.user_responses, diagnosis)
                 
                 # Add diagnosis to chat history
@@ -556,26 +644,35 @@ if not st.session_state.diagnosis_complete:
 else:
     # We're in the follow-up phase or showing test results
     if st.session_state.allow_followup:
-        # Display test results and allow for follow-up questions
-        
         # User input for follow-up questions
-        user_question = st.text_input(
-            "Tanyakan tentang demam berdarah:",
-            key="followup_input"
+        user_question = st.chat_input(
+            "Tanyakan tentang demam berdarah atau ketik 'mulai tes baru' untuk memulai ulang:"
         )
         
-        # Process follow-up questions
-        if st.button("Kirim Pertanyaan", key="submit_followup"):
-            if user_question:
+        # Process follow-up questions or new test command
+        if user_question:
+            if user_question.lower().strip() == "mulai tes baru":
+                # Reset session state but keep user ID
+                st.session_state.messages = []
+                mode_text = " (Mode Testing)" if st.session_state.DEVELOPMENT_MODE else ""
+                initial_message = f"Halo! Selamat datang di Aedra{mode_text}. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
+                st.session_state.messages.append({"role": "assistant", "content": initial_message})
+                st.session_state.messages.append({"role": "assistant", "content": questions[0]})
+                st.session_state.current_question = 0
+                st.session_state.user_responses = {}
+                st.session_state.diagnosis_complete = False
+                st.session_state.allow_followup = False
+                st.rerun()
+            else:
                 # Add user question to chat history
                 st.session_state.messages.append({"role": "user", "content": user_question})
                 
-                loading_text = "Mencari jawaban..." if not DEVELOPMENT_MODE else "Testing database - Membuat jawaban palsu..."
+                loading_text = "Mencari jawaban..." if not st.session_state.DEVELOPMENT_MODE else "Testing database - Membuat jawaban palsu..."
                 with st.spinner(loading_text):
-                    # Get answer (REAL atau MOCK tergantung mode)
+                    # Get answer
                     answer = answer_followup_question(user_question, reference_data)
                     
-                    # Save to MongoDB (selalu disimpan untuk testing)
+                    # Save to MongoDB
                     save_followup_to_mongodb(user_id, user_question, answer)
                     
                     # Add answer to chat history
@@ -583,44 +680,17 @@ else:
                 
                 # Force a rerun to update the UI
                 st.rerun()
-        
-        # Button to start a new test
-        if st.button("Mulai Tes Baru", key="new_test"):
-            # Reset session state but keep user ID
-            st.session_state.messages = []
-            mode_text = " (Mode Testing)" if DEVELOPMENT_MODE else ""
-            initial_message = f"Halo! Selamat datang di Aedra{mode_text}. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
-            st.session_state.messages.append({"role": "assistant", "content": initial_message})
-            st.session_state.messages.append({"role": "assistant", "content": questions[0]})
-            st.session_state.current_question = 0
-            st.session_state.user_responses = {}
-            st.session_state.diagnosis_complete = False
-            st.session_state.allow_followup = False
-            st.rerun()
 
-# Add a sidebar with some information
-with st.sidebar:
-    # Status Mode
-    st.header("Status Sistem")
-    if DEVELOPMENT_MODE:
-        st.success("🧪 Mode Testing Database")
-        st.info("""
-        **Mode Testing Aktif:**
-        - ✅ Database MongoDB digunakan
-        - ❌ Gemini API tidak dipanggil
-        - 🔧 Response menggunakan data palsu
-        - 💾 Semua data tetap disimpan ke database
-        """)
-    else:
-        st.info("🚀 Mode Production")
-        st.warning("""
-        **Mode Production:**
-        - ✅ Menggunakan Gemini API
-        - ⚠️ Memerlukan quota API
-        - 💰 Ada biaya penggunaan
-        """)
-    
-    # Informasi User ID untuk tracking
-    st.header("Info Session")
-    st.text(f"User ID: {get_user_id()[:8]}...")
-    st.text(f"Timestamp: {time.strftime('%H:%M:%S')}")
+    # Button to start a new test
+    if st.button("Mulai Tes Baru", key="new_test_button"):
+        # Reset session state but keep user ID
+        st.session_state.messages = []
+        mode_text = " (Mode Testing)" if st.session_state.DEVELOPMENT_MODE else ""
+        initial_message = f"Halo! Selamat datang di Aedra{mode_text}. Saya akan membantu Anda menilai gejala-gejala yang mungkin terkait dengan demam berdarah (dengue fever). Mari kita mulai dengan beberapa pertanyaan."
+        st.session_state.messages.append({"role": "assistant", "content": initial_message})
+        st.session_state.messages.append({"role": "assistant", "content": questions[0]})
+        st.session_state.current_question = 0
+        st.session_state.user_responses = {}
+        st.session_state.diagnosis_complete = False
+        st.session_state.allow_followup = False
+        st.rerun()
